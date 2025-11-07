@@ -1,4 +1,3 @@
-# app.py
 import os, io
 import numpy as np
 import streamlit as st
@@ -146,7 +145,7 @@ if uploaded:
         file_bytes = uploaded.read()  # read once
         pil_image = Image.open(io.BytesIO(file_bytes))
         size_kb = len(file_bytes) / 1024.0
-        file_label = f"**Uploaded:** `{uploaded.name}`  •  **Size:** {size_kb:.1f} KB"
+        file_label = f"Uploaded: {uploaded.name} • Size: {size_kb:.1f} KB"
         st.success(file_label)
     except UnidentifiedImageError:
         st.error("Unsupported or corrupted image. Please upload a valid JPG/PNG.")
@@ -190,11 +189,8 @@ if st.button("🔮 Run Prediction"):
             if file_label:
                 st.info(file_label)
 
-            st.markdown(
-                f"✅ **Prediction:** {name}<br>"
-                f"**Confidence:** {top_conf*100:.2f}%",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"✅ **Prediction:** {name}")
+            st.markdown(f"**Confidence:** {top_conf*100:.2f}%")
 
             # Top-3
             top3_idx = np.argsort(preds)[-3:][::-1]
