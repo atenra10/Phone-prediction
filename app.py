@@ -5,15 +5,26 @@ import streamlit as st
 from PIL import Image, ImageOps, UnidentifiedImageError
 import matplotlib.pyplot as plt
 
+# ================================
+# Streamlit image arg compatibility
+# ================================
+# Some Streamlit builds don't support `use_container_width` for st.image.
+# This shim strips it if present anywhere.
 _orig_st_image = st.image
 def _st_image_compat(*args, **kwargs):
     if "use_container_width" in kwargs:
-        # map old arg name to the version supported in your environment
-        kwargs["use_column_width"] = kwargs.pop("use_container_width")
+        kwargs.pop("use_container_width", None)
     return _orig_st_image(*args, **kwargs)
-st.image = _st_image_compat
+st.image = _st_image_compat  # monkey-patch once
 
-# Prefer tf_keras (shim for TF 2.20) and fall back to Keras 3
+st.set_page_config(page_title="Phone Model Detector", page_icon="📱", layout="centered")
+st.title("📱 Phone Model Detector")
+st.caption("Upload a phone image. The app loads the local .h5 model and shows phone specs.")
+
+IMG_SIZE = 224
+MODEL_FILENAME = "phone_detector_model.h5"
+
+# Try tf_keras first (TF 2.20 shim), then keras 3
 try:
     import tf_keras as tfk
 except Exception:
@@ -23,37 +34,73 @@ try:
 except Exception:
     keras = None
 
-st.set_page_config(page_title="Phone Model Detector", page_icon="📱", layout="centered")
-st.title("📱 Phone Model Detector")
-st.caption("Upload a phone image. The app loads the local .h5 model and shows phone specs.")
-
-IMG_SIZE = 224
-MODEL_FILENAME = "phone_detector_model.h5"
-
-# Fixed labels (training order)
-LABELS = ["iPhone_13","iPhone_14","Samsung_Galaxy_S23","Google_Pixel_7","OnePlus_11"]
+# ---------------------
+# Fixed labels (order!)
+# ---------------------
+LABELS = [
+    "iPhone_13",
+    "iPhone_14",
+    "Samsung_Galaxy_S23",
+    "Google_Pixel_7",
+    "OnePlus_11",
+]
 
 PHONE_SPECS = {
-    "iPhone_13": {"pretty":"iPhone 13","processor":"Apple A15 Bionic","ram":"4 GB",
-        "storage":"128/256/512 GB","rear_camera":"Dual 12 MP","front_camera":"12 MP",
-        "display":"6.1\" OLED (Super Retina XDR)","battery":"3227 mAh",
-        "more_info":"https://support.apple.com/en-in/111872"},
-    "iPhone_14": {"pretty":"iPhone 14","processor":"Apple A15 Bionic (5-core GPU)","ram":"6 GB",
-        "storage":"128/256/512 GB","rear_camera":"Dual 12 MP","front_camera":"12 MP",
-        "display":"6.1\" OLED (Super Retina XDR)","battery":"3279 mAh",
-        "more_info":"https://support.apple.com/en-in/111850"},
-    "Samsung_Galaxy_S23": {"pretty":"Samsung Galaxy S23","processor":"Snapdragon 8 Gen 2 for Galaxy","ram":"8 GB",
-        "storage":"128/256 GB","rear_camera":"50 + 10 + 12 MP","front_camera":"12 MP",
-        "display":"6.1\" Dynamic AMOLED 2X, 120 Hz","battery":"3900 mAh",
-        "more_info":"https://www.samsung.com/in/smartphones/galaxy-s/galaxy-s23-phantom-black-256gb-sm-s911bzkcins/"},
-    "Google_Pixel_7": {"pretty":"Google Pixel 7","processor":"Google Tensor G2","ram":"8 GB",
-        "storage":"128/256 GB","rear_camera":"50 + 12 MP","front_camera":"10.8 MP",
-        "display":"6.3\" OLED, 90 Hz","battery":"4355 mAh",
-        "more_info":"https://en.wikipedia.org/wiki/Pixel_7"},
-    "OnePlus_11": {"pretty":"OnePlus 11","processor":"Snapdragon 8 Gen 2","ram":"8/16 GB (LPDDR5X)",
-        "storage":"128 GB (UFS 3.1) / 256 GB (UFS 4.0)","rear_camera":"50 + 48 + 32 MP","front_camera":"16 MP",
-        "display":"6.7\" 120 Hz LTPO3 (QHD+)","battery":"5000 mAh",
-        "more_info":"https://www.oneplus.in/11/specs"},
+    "iPhone_13": {
+        "pretty": "iPhone 13",
+        "processor": "Apple A15 Bionic",
+        "ram": "4 GB",
+        "storage": "128/256/512 GB",
+        "rear_camera": "Dual 12 MP",
+        "front_camera": "12 MP",
+        "display": "6.1\" OLED (Super Retina XDR)",
+        "battery": "3227 mAh",
+        "more_info": "https://support.apple.com/en-in/111872",
+    },
+    "iPhone_14": {
+        "pretty": "iPhone 14",
+        "processor": "Apple A15 Bionic (5-core GPU)",
+        "ram": "6 GB",
+        "storage": "128/256/512 GB",
+        "rear_camera": "Dual 12 MP",
+        "front_camera": "12 MP",
+        "display": "6.1\" OLED (Super Retina XDR)",
+        "battery": "3279 mAh",
+        "more_info": "https://support.apple.com/en-in/111850",
+    },
+    "Samsung_Galaxy_S23": {
+        "pretty": "Samsung Galaxy S23",
+        "processor": "Snapdragon 8 Gen 2 for Galaxy",
+        "ram": "8 GB",
+        "storage": "128/256 GB",
+        "rear_camera": "50 + 10 + 12 MP",
+        "front_camera": "12 MP",
+        "display": "6.1\" Dynamic AMOLED 2X, 120 Hz",
+        "battery": "3900 mAh",
+        "more_info": "https://www.samsung.com/in/smartphones/galaxy-s/galaxy-s23-phantom-black-256gb-sm-s911bzkcins/",
+    },
+    "Google_Pixel_7": {
+        "pretty": "Google Pixel 7",
+        "processor": "Google Tensor G2",
+        "ram": "8 GB",
+        "storage": "128/256 GB",
+        "rear_camera": "50 + 12 MP",
+        "front_camera": "10.8 MP",
+        "display": "6.3\" OLED, 90 Hz",
+        "battery": "4355 mAh",
+        "more_info": "https://en.wikipedia.org/wiki/Pixel_7",
+    },
+    "OnePlus_11": {
+        "pretty": "OnePlus 11",
+        "processor": "Snapdragon 8 Gen 2",
+        "ram": "8/16 GB (LPDDR5X)",
+        "storage": "128 GB (UFS 3.1) / 256 GB (UFS 4.0)",
+        "rear_camera": "50 + 48 + 32 MP",
+        "front_camera": "16 MP",
+        "display": "6.7\" 120 Hz LTPO3 (QHD+)",
+        "battery": "5000 mAh",
+        "more_info": "https://www.oneplus.in/11/specs",
+    },
 }
 
 def format_label(s: str) -> str:
@@ -86,9 +133,10 @@ def preprocess_image(pil_img, size=(IMG_SIZE, IMG_SIZE)):
 def to_1d_probs(raw):
     """Normalize model.predict output into a 1-D float array of probabilities."""
     if isinstance(raw, dict):
-        for k in ("predictions","logits","output_0","probs"):
+        for k in ("predictions", "logits", "output_0", "probs"):
             if k in raw:
-                raw = raw[k]; break
+                raw = raw[k]
+                break
         else:
             raw = next(iter(raw.values()))
     elif isinstance(raw, (list, tuple)):
@@ -105,10 +153,13 @@ def to_1d_probs(raw):
         arr = e / (e.sum() + 1e-12)
     return arr
 
-# Sidebar
+# ----------------
+# Sidebar section
+# ----------------
 st.sidebar.header("🧠 Model")
 st.sidebar.write("Path:")
 st.sidebar.code(os.path.abspath(MODEL_FILENAME))
+
 status_box = st.sidebar.empty()
 try:
     status_box.info("Loading model…")
@@ -121,15 +172,17 @@ except Exception as e:
 st.sidebar.header("🏷️ Phones that can be Classified")
 st.sidebar.write([format_label(x) for x in LABELS])
 
-# Upload (read once → reuse)
+# -----------
+# Main layout
+# -----------
 st.subheader("1) Upload an image")
-uploaded = st.file_uploader("Choose a phone image (JPG/PNG)", type=["jpg","jpeg","png"])
+uploaded = st.file_uploader("Choose a phone image (JPG/PNG)", type=["jpg", "jpeg", "png"])
 
 file_bytes = None
 pil_image = None
 if uploaded:
     try:
-        file_bytes = uploaded.read()
+        file_bytes = uploaded.read()  # read once
         pil_image = Image.open(io.BytesIO(file_bytes))
     except UnidentifiedImageError:
         st.error("Unsupported or corrupted image. Please upload a valid JPG/PNG.")
@@ -143,15 +196,15 @@ col1, col2 = st.columns([1, 1], vertical_alignment="top")
 with col1:
     st.subheader("2) Preview")
     if pil_image is not None:
-        # Always use use_column_width for compatibility
+        # ONLY use use_column_width for maximum compatibility
         st.image(pil_image, caption="Uploaded image", use_column_width=True)
     else:
         st.info("No image uploaded yet.")
 
 with col2:
     st.subheader("3) Predict")
-    # keep button arg; it's supported; this error was only about st.image
-    if st.button("🔮 Run Prediction", type="primary", use_container_width=True):
+    # No use_container_width here either
+    if st.button("🔮 Run Prediction"):
         if pil_image is None:
             st.error("Please upload an image first.")
         else:
@@ -191,7 +244,7 @@ with col2:
                 top3_idx = np.argsort(preds)[-3:][::-1]
                 st.markdown("**Top-3 predictions**")
                 for i in top3_idx:
-                    lbl = str(LABELS[int(i)]).replace("_"," ")
+                    lbl = str(LABELS[int(i)]).replace("_", " ")
                     prob = float(preds[int(i)]) * 100.0
                     st.write(f"- {lbl}: {prob:.2f}%")
 
@@ -224,4 +277,13 @@ with col2:
                 st.error(f"Prediction failed ({type(e).__name__}).")
                 st.exception(e)
 
-
+st.markdown("---")
+with st.expander("ℹ️ Notes"):
+    st.markdown(
+        """
+- `phone_detector_model.h5` must be next to `app.py`.
+- Image is resized to 224×224 and scaled to [0,1].
+- Labels are fixed to: iPhone 13, iPhone 14, Samsung Galaxy S23, Google Pixel 7, OnePlus 11.
+- If your model was trained on a different order/number of classes, update `LABELS` accordingly.
+        """
+    )
