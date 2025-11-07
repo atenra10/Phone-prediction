@@ -132,57 +132,80 @@ with col2:
         else:
             try:
                 x = preprocess_image(pil_image, (IMG_SIZE, IMG_SIZE))
-                preds = model.predict(x, verbose=0)
-                if preds.ndim == 2:
-                    preds = preds[0]
+
+                # --- Predict & sanitize numeric types ---
+                raw = model.predict(x, verbose=0)
+                preds = np.asarray(raw, dtype=float).squeeze()  # ensure 1D float64
+
+                # Handle unexpected shapes
                 if preds.ndim != 1:
                     st.error(f"Unexpected model output shape: {preds.shape}")
-                elif len(LABELS) != preds.shape[0]:
+                    st.stop()
+
+                # Guard against NaN/inf; re-normalize if needed
+                if not np.isfinite(preds).all():
+                    # softmax fallback
+                    e = np.exp(np.nan_to_num(preds, nan=0.0) - np.nanmax(preds))
+                    preds = e / (e.sum() + 1e-12)
+
+                # Guard against length mismatch
+                if len(LABELS) != preds.shape[0]:
                     st.error(
-                        f"Model outputs {preds.shape[0]} classes but label list has {len(LABELS)}."
+                        f"Model outputs {int(preds.shape[0])} classes but label list has {len(LABELS)}."
                     )
-                else:
-                    top_idx = int(np.argmax(preds))
-                    top_conf = float(preds[top_idx])
-                    key = LABELS[top_idx]
-                    spec = PHONE_SPECS.get(key, {})
-                    name = spec.get("pretty", format_label(key))
+                    st.stop()
 
-                    st.success(f"**Prediction:** {name}  \n**Confidence:** {top_conf*100:.2f}%")
+                # --- Top prediction ---
+                top_idx = int(np.argmax(preds))
+                top_conf = float(preds[top_idx])          # cast to Python float
+                key = str(LABELS[top_idx])               # cast to Python str
+                spec = PHONE_SPECS.get(key, {})
+                name = str(spec.get("pretty", key.replace("_", " ")))
 
-                    # Top-3
-                    top3_idx = np.argsort(preds)[-3:][::-1]
-                    st.markdown("**Top-3 predictions**")
-                    for i in top3_idx:
-                        st.write(f"- {format_label(LABELS[i])}: {preds[i]*100:.2f}%")
+                # Use markdown (robust) instead of st.success
+                st.markdown(
+                    f"✅ **Prediction:** {name}<br>"
+                    f"**Confidence:** {top_conf*100:.2f}%",
+                    unsafe_allow_html=True,
+                )
 
-                    # Prob chart
-                    fig, ax = plt.subplots(figsize=(6.5, 3.6))
-                    names = [format_label(l) for l in LABELS]
-                    ax.bar(range(len(names)), preds)
-                    ax.set_xticks(range(len(names)))
-                    ax.set_xticklabels(names, rotation=28, ha="right")
-                    ax.set_ylabel("Probability")
-                    ax.set_ylim(0.0, 1.0)
-                    ax.set_title("Class Probabilities")
-                    st.pyplot(fig)
+                # --- Top-3 ---
+                top3_idx = np.argsort(preds)[-3:][::-1]
+                st.markdown("**Top-3 predictions**")
+                for i in top3_idx:
+                    lbl = str(LABELS[int(i)]).replace("_", " ")
+                    prob = float(preds[int(i)]) * 100.0
+                    st.write(f"- {lbl}: {prob:.2f}%")
 
-                    # Specs card
-                    st.markdown("### 📋 Phone details")
-                    cA, cB = st.columns(2)
-                    with cA:
-                        st.write(f"**Processor:** {spec.get('processor','—')}")
-                        st.write(f"**RAM:** {spec.get('ram','—')}")
-                        st.write(f"**Storage:** {spec.get('storage','—')}")
-                        st.write(f"**Display:** {spec.get('display','—')}")
-                    with cB:
-                        st.write(f"**Rear camera:** {spec.get('rear_camera','—')}")
-                        st.write(f"**Front camera:** {spec.get('front_camera','—')}")
-                        st.write(f"**Battery:** {spec.get('battery','—')}")
-                        mi = spec.get("more_info")
-                        if mi:
-                            st.markdown(f"[More details]({mi})")
+                # --- Probability chart ---
+                fig, ax = plt.subplots(figsize=(6.5, 3.6))
+                names = [str(l).replace("_", " ") for l in LABELS]
+                ax.bar(range(len(names)), preds.astype(float))
+                ax.set_xticks(range(len(names)))
+                ax.set_xticklabels(names, rotation=28, ha="right")
+                ax.set_ylabel("Probability")
+                ax.set_ylim(0.0, 1.0)
+                ax.set_title("Class Probabilities")
+                st.pyplot(fig)
+
+                # --- Spec card ---
+                st.markdown("### 📋 Phone details")
+                cA, cB = st.columns(2)
+                with cA:
+                    st.write(f"**Processor:** {spec.get('processor','—')}")
+                    st.write(f"**RAM:** {spec.get('ram','—')}")
+                    st.write(f"**Storage:** {spec.get('storage','—')}")
+                    st.write(f"**Display:** {spec.get('display','—')}")
+                with cB:
+                    st.write(f"**Rear camera:** {spec.get('rear_camera','—')}")
+                    st.write(f"**Front camera:** {spec.get('front_camera','—')}")
+                    st.write(f"**Battery:** {spec.get('battery','—')}")
+                    mi = spec.get("more_info")
+                    if isinstance(mi, str) and mi:
+                        st.markdown(f"[More details]({mi})")
 
             except Exception as e:
+                # Show exact type to help debug on Cloud
+                st.error(f"Prediction failed ({type(e).__name__}).")
                 st.exception(e)
 
