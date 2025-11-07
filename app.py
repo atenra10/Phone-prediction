@@ -140,19 +140,30 @@ uploaded = st.file_uploader("Choose a phone image (JPG/PNG)", type=["jpg","jpeg"
 file_bytes = None
 pil_image = None
 file_label = ""
-if uploaded:
+
+if uploaded is not None:
     try:
-        file_bytes = uploaded.read()  # read once
+        file_bytes = uploaded.read()
         pil_image = Image.open(io.BytesIO(file_bytes))
         size_kb = len(file_bytes) / 1024.0
-        file_label = f"Uploaded: {uploaded.name} • Size: {size_kb:.1f} KB"
-        st.success(file_label)
+        file_label = f"Uploaded: {uploaded.name} - Size: {size_kb:.1f} KB"
+        st.write(f"✅ {file_label}")
+        
+        # Display the uploaded image with compatibility
+        try:
+            st.image(pil_image, caption="Uploaded Image", use_column_width=True)
+        except TypeError:
+            # Fallback for older versions
+            st.image(pil_image, caption="Uploaded Image", width=400)
+            
     except UnidentifiedImageError:
         st.error("Unsupported or corrupted image. Please upload a valid JPG/PNG.")
         uploaded = None
+        pil_image = None
     except Exception as e:
         st.error(f"Could not read image: {e}")
         uploaded = None
+        pil_image = None
 
 st.subheader("2) Predict")
 if st.button("🔮 Run Prediction"):
