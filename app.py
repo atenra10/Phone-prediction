@@ -5,7 +5,7 @@ import streamlit as st
 from PIL import Image, ImageOps, UnidentifiedImageError
 import matplotlib.pyplot as plt
 
-# Prefer tf_keras (shim for TF 2.20) and fall back to keras 3
+# Prefer tf_keras (shim for TF 2.20) and fall back to Keras 3
 try:
     import tf_keras as tfk
 except Exception:
@@ -22,96 +22,45 @@ st.caption("Upload a phone image. The app loads the local .h5 model and shows ph
 IMG_SIZE = 224
 MODEL_FILENAME = "phone_detector_model.h5"
 
-# ---- Fixed labels (training order) ----
-LABELS = [
-    "iPhone_13",
-    "iPhone_14",
-    "Samsung_Galaxy_S23",
-    "Google_Pixel_7",
-    "OnePlus_11",
-]
+# Fixed labels (training order)
+LABELS = ["iPhone_13","iPhone_14","Samsung_Galaxy_S23","Google_Pixel_7","OnePlus_11"]
 
-# ---- Offline phone specs for display ----
 PHONE_SPECS = {
-    "iPhone_13": {
-        "pretty": "iPhone 13",
-        "processor": "Apple A15 Bionic",
-        "ram": "4 GB",
-        "storage": "128/256/512 GB",
-        "rear_camera": "Dual 12 MP (Wide + Ultra-Wide)",
-        "front_camera": "12 MP",
-        "display": "6.1\" OLED (Super Retina XDR), ~460 ppi",
-        "battery": "3227 mAh",
-        "more_info": "https://support.apple.com/en-in/111872",
-    },
-    "iPhone_14": {
-        "pretty": "iPhone 14",
-        "processor": "Apple A15 Bionic (5-core GPU)",
-        "ram": "6 GB",
-        "storage": "128/256/512 GB",
-        "rear_camera": "Dual 12 MP (Main + Ultra-Wide)",
-        "front_camera": "12 MP",
-        "display": "6.1\" OLED (Super Retina XDR), ~460 ppi",
-        "battery": "3279 mAh",
-        "more_info": "https://support.apple.com/en-in/111850",
-    },
-    "Samsung_Galaxy_S23": {
-        "pretty": "Samsung Galaxy S23",
-        "processor": "Snapdragon 8 Gen 2 for Galaxy",
-        "ram": "8 GB",
-        "storage": "128/256 GB",
-        "rear_camera": "50 + 10 + 12 MP",
-        "front_camera": "12 MP",
-        "display": "6.1\" Dynamic AMOLED 2X, 120 Hz",
-        "battery": "3900 mAh",
-        "more_info": "https://www.samsung.com/in/smartphones/galaxy-s/galaxy-s23-phantom-black-256gb-sm-s911bzkcins/",
-    },
-    "Google_Pixel_7": {
-        "pretty": "Google Pixel 7",
-        "processor": "Google Tensor G2",
-        "ram": "8 GB",
-        "storage": "128/256 GB",
-        "rear_camera": "50 + 12 MP",
-        "front_camera": "10.8 MP",
-        "display": "6.3\" OLED, 90 Hz",
-        "battery": "4355 mAh",
-        "more_info": "https://en.wikipedia.org/wiki/Pixel_7",
-    },
-    "OnePlus_11": {
-        "pretty": "OnePlus 11",
-        "processor": "Snapdragon 8 Gen 2",
-        "ram": "8/16 GB (LPDDR5X)",
-        "storage": "128 GB (UFS 3.1) / 256 GB (UFS 4.0)",
-        "rear_camera": "50 + 48 + 32 MP",
-        "front_camera": "16 MP",
-        "display": "6.7\" 120 Hz LTPO3 (QHD+)",
-        "battery": "5000 mAh",
-        "more_info": "https://www.oneplus.in/11/specs",
-    },
+    "iPhone_13": {"pretty":"iPhone 13","processor":"Apple A15 Bionic","ram":"4 GB",
+        "storage":"128/256/512 GB","rear_camera":"Dual 12 MP","front_camera":"12 MP",
+        "display":"6.1\" OLED (Super Retina XDR)","battery":"3227 mAh",
+        "more_info":"https://support.apple.com/en-in/111872"},
+    "iPhone_14": {"pretty":"iPhone 14","processor":"Apple A15 Bionic (5-core GPU)","ram":"6 GB",
+        "storage":"128/256/512 GB","rear_camera":"Dual 12 MP","front_camera":"12 MP",
+        "display":"6.1\" OLED (Super Retina XDR)","battery":"3279 mAh",
+        "more_info":"https://support.apple.com/en-in/111850"},
+    "Samsung_Galaxy_S23": {"pretty":"Samsung Galaxy S23","processor":"Snapdragon 8 Gen 2 for Galaxy","ram":"8 GB",
+        "storage":"128/256 GB","rear_camera":"50 + 10 + 12 MP","front_camera":"12 MP",
+        "display":"6.1\" Dynamic AMOLED 2X, 120 Hz","battery":"3900 mAh",
+        "more_info":"https://www.samsung.com/in/smartphones/galaxy-s/galaxy-s23-phantom-black-256gb-sm-s911bzkcins/"},
+    "Google_Pixel_7": {"pretty":"Google Pixel 7","processor":"Google Tensor G2","ram":"8 GB",
+        "storage":"128/256 GB","rear_camera":"50 + 12 MP","front_camera":"10.8 MP",
+        "display":"6.3\" OLED, 90 Hz","battery":"4355 mAh",
+        "more_info":"https://en.wikipedia.org/wiki/Pixel_7"},
+    "OnePlus_11": {"pretty":"OnePlus 11","processor":"Snapdragon 8 Gen 2","ram":"8/16 GB (LPDDR5X)",
+        "storage":"128 GB (UFS 3.1) / 256 GB (UFS 4.0)","rear_camera":"50 + 48 + 32 MP","front_camera":"16 MP",
+        "display":"6.7\" 120 Hz LTPO3 (QHD+)","battery":"5000 mAh",
+        "more_info":"https://www.oneplus.in/11/specs"},
 }
 
 def format_label(s: str) -> str:
     return s.replace("_", " ")
-
-def st_image_compat(img, **kwargs):
-    """Use whichever Streamlit image width arg exists in this version."""
-    try:
-        return st.image(img, use_container_width=True, **kwargs)
-    except TypeError:
-        return st.image(img, use_column_width=True, **kwargs)
 
 @st.cache_resource(show_spinner=False)
 def load_model_from_path(model_path: str):
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
     errs = []
-    # Try tf_keras first
     if tfk is not None:
         try:
             return tfk.models.load_model(model_path, compile=False)
         except Exception as e:
             errs.append(f"tf_keras error: {e!s}")
-    # Fall back to Keras 3 loader
     if keras is not None:
         try:
             return keras.models.load_model(model_path, compile=False, safe_mode=False)
@@ -127,29 +76,20 @@ def preprocess_image(pil_img, size=(IMG_SIZE, IMG_SIZE)):
     return np.expand_dims(arr, axis=0)
 
 def to_1d_probs(raw):
-    """
-    Normalize model.predict output into a 1-D float array of probabilities.
-    Handles dict/list/tuple outputs, extra batch dims, and logits.
-    """
-    # 1) Extract array from possible wrappers
+    """Normalize model.predict output into a 1-D float array of probabilities."""
     if isinstance(raw, dict):
-        for k in ("predictions", "logits", "output_0", "probs"):
+        for k in ("predictions","logits","output_0","probs"):
             if k in raw:
-                raw = raw[k]
-                break
+                raw = raw[k]; break
         else:
             raw = next(iter(raw.values()))
     elif isinstance(raw, (list, tuple)):
         raw = next((v for v in raw if hasattr(v, "shape")), raw[0])
-
-    # 2) NumPy, squeeze batch, ensure 1-D
     arr = np.asarray(raw, dtype=float).squeeze()
     if arr.ndim > 1:
         arr = arr[0]
     if arr.ndim != 1:
         raise ValueError(f"Unexpected prediction shape after squeeze: {arr.shape}")
-
-    # 3) Clean NaN/inf; softmax if not already probs
     arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
     s = float(arr.sum())
     if not (0.98 <= s <= 1.02):
@@ -157,7 +97,7 @@ def to_1d_probs(raw):
         arr = e / (e.sum() + 1e-12)
     return arr
 
-# ---- Sidebar: model + labels ----
+# Sidebar
 st.sidebar.header("🧠 Model")
 st.sidebar.write("Path:")
 st.sidebar.code(os.path.abspath(MODEL_FILENAME))
@@ -173,15 +113,15 @@ except Exception as e:
 st.sidebar.header("🏷️ Phones that can be Classified")
 st.sidebar.write([format_label(x) for x in LABELS])
 
-# ---- Upload once → bytes → reuse safely ----
+# Upload (read once → reuse)
 st.subheader("1) Upload an image")
-uploaded = st.file_uploader("Choose a phone image (JPG/PNG)", type=["jpg", "jpeg", "png"])
+uploaded = st.file_uploader("Choose a phone image (JPG/PNG)", type=["jpg","jpeg","png"])
 
 file_bytes = None
 pil_image = None
 if uploaded:
     try:
-        file_bytes = uploaded.read()  # read once
+        file_bytes = uploaded.read()
         pil_image = Image.open(io.BytesIO(file_bytes))
     except UnidentifiedImageError:
         st.error("Unsupported or corrupted image. Please upload a valid JPG/PNG.")
@@ -195,24 +135,23 @@ col1, col2 = st.columns([1, 1], vertical_alignment="top")
 with col1:
     st.subheader("2) Preview")
     if pil_image is not None:
-        st_image_compat(pil_image, caption="Uploaded image")
+        # Always use use_column_width for compatibility
+        st.image(pil_image, caption="Uploaded image", use_column_width=True)
     else:
         st.info("No image uploaded yet.")
 
 with col2:
     st.subheader("3) Predict")
+    # keep button arg; it's supported; this error was only about st.image
     if st.button("🔮 Run Prediction", type="primary", use_container_width=True):
         if pil_image is None:
             st.error("Please upload an image first.")
         else:
             try:
                 x = preprocess_image(pil_image, (IMG_SIZE, IMG_SIZE))
-
-                # Predict → normalize to 1-D probs
                 raw_out = model.predict(x, verbose=0)
                 preds = to_1d_probs(raw_out)
 
-                # Debug info (expandable)
                 with st.expander("Debug: raw output details", expanded=False):
                     st.write({
                         "raw_type": type(raw_out).__name__,
@@ -221,7 +160,6 @@ with col2:
                         "preds_first5": preds[: min(5, preds.shape[0])].tolist(),
                     })
 
-                # Label length guard
                 if preds.shape[0] != len(LABELS):
                     st.error(
                         f"Model outputs {int(preds.shape[0])} classes but LABELS has {len(LABELS)}.\n"
@@ -230,7 +168,6 @@ with col2:
                     )
                     st.stop()
 
-                # Top-1
                 top_idx = int(np.argmax(preds))
                 top_conf = float(preds[top_idx])
                 key = str(LABELS[top_idx])
@@ -243,15 +180,13 @@ with col2:
                     unsafe_allow_html=True,
                 )
 
-                # Top-3
                 top3_idx = np.argsort(preds)[-3:][::-1]
                 st.markdown("**Top-3 predictions**")
                 for i in top3_idx:
-                    lbl = str(LABELS[int(i)]).replace("_", " ")
+                    lbl = str(LABELS[int(i)]).replace("_"," ")
                     prob = float(preds[int(i)]) * 100.0
                     st.write(f"- {lbl}: {prob:.2f}%")
 
-                # Probability chart
                 fig, ax = plt.subplots(figsize=(6.5, 3.6))
                 names = [l.replace("_", " ") for l in LABELS]
                 ax.bar(range(len(names)), preds.astype(float))
@@ -262,7 +197,6 @@ with col2:
                 ax.set_title("Class Probabilities")
                 st.pyplot(fig)
 
-                # Spec card
                 st.markdown("### 📋 Phone details")
                 cA, cB = st.columns(2)
                 with cA:
@@ -281,5 +215,4 @@ with col2:
             except Exception as e:
                 st.error(f"Prediction failed ({type(e).__name__}).")
                 st.exception(e)
-
 
