@@ -95,7 +95,7 @@ try:
 except Exception as e:
     status_box.error(f"Failed to load model:\n{e}")
     st.stop()
-st.sidebar.header("🏷️ Phones that can be Classified"")
+st.sidebar.header("🏷️ Phones that can be Classified")
 st.sidebar.write([format_label(x) for x in LABELS])
 
 # ---- Upload once → bytes → reuse safely ----
@@ -185,3 +185,4 @@ with col2:
 
             except Exception as e:
                 st.exception(e)
+
