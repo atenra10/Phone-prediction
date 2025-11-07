@@ -242,13 +242,3 @@ if st.button("🔮 Run Prediction"):
             st.error(f"Prediction failed ({type(e).__name__}).")
             st.exception(e)
 
-st.markdown("---")
-with st.expander("ℹ️ Notes"):
-    st.markdown(
-        """
-- `phone_detector_model.h5` must be next to `app.py`.
-- Image is resized to 224×224 and scaled to [0,1].
-- Labels are fixed to: iPhone 13, iPhone 14, Samsung Galaxy S23, Google Pixel 7, OnePlus 11.
-- If your model was trained on a different order/number of classes, update `LABELS` accordingly.
-        """
-    )
