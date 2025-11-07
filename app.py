@@ -15,6 +15,57 @@ try:
 except Exception:
     keras = None
 
+def to_1d_probs(raw):
+    """
+    Make model.predict(...) output a clean 1-D float array of class probabilities.
+    Handles dict, list/tuple, extra batch dims, and non-softmax logits.
+    """
+    import numpy as np
+
+    # 1) Pick the array out of dict/list/tuple
+    arr = None
+    if isinstance(raw, dict):
+        # common key names people save in TF SavedModels
+        for k in ("predictions", "logits", "output_0", "probs"):
+            if k in raw:
+                arr = raw[k]
+                break
+        if arr is None:
+            # just take the first value
+            arr = next(iter(raw.values()))
+    elif isinstance(raw, (list, tuple)):
+        # take the first array-like
+        for v in raw:
+            if hasattr(v, "shape"):
+                arr = v
+                break
+        if arr is None:
+            arr = raw[0]
+    else:
+        arr = raw
+
+    # 2) Ensure numpy array, squeeze batch dims
+    arr = np.asarray(arr, dtype=float).squeeze()
+
+    # After squeeze: if still >1D, assume batch-first
+    if arr.ndim > 1:
+        arr = arr[0]
+
+    if arr.ndim != 1:
+        raise ValueError(f"Unexpected prediction shape after squeeze: {arr.shape}")
+
+    # 3) Replace NaN/inf, then convert to probabilities if needed
+    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # If not a probability vector (sum not approx 1), softmax it
+    s = float(arr.sum())
+    if not (0.98 <= s <= 1.02):  # loose check
+        e = np.exp(arr - np.max(arr))
+        arr = e / (e.sum() + 1e-12)
+
+    return arr
+
+
 st.set_page_config(page_title="Phone Model Detector", page_icon="📱", layout="centered")
 st.title("📱 Phone Model Detector")
 st.caption("Upload a phone image. The app loads the local .h5 model automatically and shows phone specs.")
@@ -133,43 +184,44 @@ with col2:
             try:
                 x = preprocess_image(pil_image, (IMG_SIZE, IMG_SIZE))
 
-                # --- Predict & sanitize numeric types ---
+                # Robustly normalize predictions to a 1-D probability vector
                 raw = model.predict(x, verbose=0)
-                preds = np.asarray(raw, dtype=float).squeeze()  # ensure 1D float64
+                preds = to_1d_probs(raw)
 
-                # Handle unexpected shapes
-                if preds.ndim != 1:
-                    st.error(f"Unexpected model output shape: {preds.shape}")
-                    st.stop()
+                # Debug (expandable) to see shapes/types if something goes wrong
+                with st.expander("Debug: raw output details", expanded=False):
+                    st.write(
+                        {
+                            "raw_type": type(raw).__name__,
+                            "preds_shape": getattr(preds, "shape", None),
+                            "preds_sum": float(np.sum(preds)),
+                            "preds_first5": preds[: min(5, preds.shape[0])].tolist(),
+                        }
+                    )
 
-                # Guard against NaN/inf; re-normalize if needed
-                if not np.isfinite(preds).all():
-                    # softmax fallback
-                    e = np.exp(np.nan_to_num(preds, nan=0.0) - np.nanmax(preds))
-                    preds = e / (e.sum() + 1e-12)
-
-                # Guard against length mismatch
-                if len(LABELS) != preds.shape[0]:
+                # Guard against label length mismatch
+                if preds.shape[0] != len(LABELS):
                     st.error(
-                        f"Model outputs {int(preds.shape[0])} classes but label list has {len(LABELS)}."
+                        f"Model outputs {int(preds.shape[0])} classes but LABELS has {len(LABELS)}.\n"
+                        "Make sure the model was trained on these 5 classes, in this order:\n"
+                        f"{[l.replace('_',' ') for l in LABELS]}"
                     )
                     st.stop()
 
-                # --- Top prediction ---
+                # Top-1
                 top_idx = int(np.argmax(preds))
-                top_conf = float(preds[top_idx])          # cast to Python float
-                key = str(LABELS[top_idx])               # cast to Python str
+                top_conf = float(preds[top_idx])
+                key = str(LABELS[top_idx])
                 spec = PHONE_SPECS.get(key, {})
                 name = str(spec.get("pretty", key.replace("_", " ")))
 
-                # Use markdown (robust) instead of st.success
                 st.markdown(
                     f"✅ **Prediction:** {name}<br>"
                     f"**Confidence:** {top_conf*100:.2f}%",
                     unsafe_allow_html=True,
                 )
 
-                # --- Top-3 ---
+                # Top-3
                 top3_idx = np.argsort(preds)[-3:][::-1]
                 st.markdown("**Top-3 predictions**")
                 for i in top3_idx:
@@ -177,9 +229,9 @@ with col2:
                     prob = float(preds[int(i)]) * 100.0
                     st.write(f"- {lbl}: {prob:.2f}%")
 
-                # --- Probability chart ---
+                # Probability bar chart
                 fig, ax = plt.subplots(figsize=(6.5, 3.6))
-                names = [str(l).replace("_", " ") for l in LABELS]
+                names = [l.replace("_", " ") for l in LABELS]
                 ax.bar(range(len(names)), preds.astype(float))
                 ax.set_xticks(range(len(names)))
                 ax.set_xticklabels(names, rotation=28, ha="right")
@@ -188,7 +240,7 @@ with col2:
                 ax.set_title("Class Probabilities")
                 st.pyplot(fig)
 
-                # --- Spec card ---
+                # Specs card
                 st.markdown("### 📋 Phone details")
                 cA, cB = st.columns(2)
                 with cA:
@@ -205,7 +257,7 @@ with col2:
                         st.markdown(f"[More details]({mi})")
 
             except Exception as e:
-                # Show exact type to help debug on Cloud
                 st.error(f"Prediction failed ({type(e).__name__}).")
                 st.exception(e)
+
 
