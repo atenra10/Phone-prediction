@@ -5,6 +5,14 @@ import streamlit as st
 from PIL import Image, ImageOps, UnidentifiedImageError
 import matplotlib.pyplot as plt
 
+_orig_st_image = st.image
+def _st_image_compat(*args, **kwargs):
+    if "use_container_width" in kwargs:
+        # map old arg name to the version supported in your environment
+        kwargs["use_column_width"] = kwargs.pop("use_container_width")
+    return _orig_st_image(*args, **kwargs)
+st.image = _st_image_compat
+
 # Prefer tf_keras (shim for TF 2.20) and fall back to Keras 3
 try:
     import tf_keras as tfk
@@ -215,4 +223,5 @@ with col2:
             except Exception as e:
                 st.error(f"Prediction failed ({type(e).__name__}).")
                 st.exception(e)
+
 
